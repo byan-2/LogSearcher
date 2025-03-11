@@ -1,6 +1,6 @@
-# Logsearch
+# Logsearcher
 
-Logsearch is a lightweight Node.js application that allows users to query log files via an HTTP GET endpoint. The application is optimized for efficiency and scalability by streaming log entries from potentially very large files. It leverages generators, buffer-based file processing, and validations to ensure secure, fast, and reliable log retrieval.
+Logsearcher is a lightweight Node.js application that allows users to query log files via an HTTP GET endpoint. The application is optimized for efficiency and scalability by streaming log entries from potentially very large files. It leverages generators, buffer-based file processing, and validations to ensure secure, fast, and reliable log retrieval.
 
 ## Table of Contents
 
@@ -19,7 +19,7 @@ Logsearch is a lightweight Node.js application that allows users to query log fi
 
 ## Overview
 
-Logsearch allows users to stream log files efficiently by reading files in reverse. This ensures that the most recent entries are retrieved quickly without the need to scan the entire file. The core processing logic is implemented in `blockReader.ts` and integrates thorough input and runtime validations to maintain performance and security.
+Logsearcher allows users to stream log files efficiently by reading files in reverse. This ensures that the most recent entries are retrieved quickly without the need to scan the entire file. The core processing logic is implemented in `blockReader.ts` and integrates thorough input and runtime validations to maintain performance and security.
 
 ## API Endpoint
 
@@ -96,7 +96,7 @@ Most of the core logic is encapsulated in the `blockReader.ts` file. The followi
 ## Performance Considerations
 
 - **Memory Efficiency:**
-  By processing the file in fixed-size chunks and using asynchronous generators, Logsearch avoids loading entire files into memory. Buffer-level operations further reduce unnecessary memory overhead.
+  By processing the file in fixed-size chunks and using asynchronous generators, Logsearcher avoids loading entire files into memory. Buffer-level operations further reduce unnecessary memory overhead.
 
 - **Optimized Reverse Traversal:**
   Reading the file in reverse ensures that the application quickly accesses recent log entries without scanning the entire file.
@@ -117,8 +117,10 @@ Most of the core logic is encapsulated in the `blockReader.ts` file. The followi
 
 1. **Navigate to the Server Directory:**
    ```bash
-     cd server
+    cd server
     npm install
+    npm run build
+    npm run start
    ```
    **Tests**
 
@@ -134,8 +136,9 @@ Most of the core logic is encapsulated in the `blockReader.ts` file. The followi
 
 - ## Client Setup
 
-1. **Navigate to the Server Directory (if you aren’t there already):**
+1. **Navigate to the Client Directory (if you aren’t there already):**
    ```bash
-   cd client
+   cd logclient
+   npm install
    npm run start
    ```
