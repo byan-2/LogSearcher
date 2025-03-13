@@ -1,0 +1,31 @@
+# Dependency directories
+node_modules/
+bower_components/
+
+# Test dir 2gb+ log files
+large/
+
+# Optional npm cache directory
+.npm
+.cache
+
+# Production build
+build/
+dist/
+
+# Coverage directory used by testing tools
+coverage/
+
+# Optional REACT specific files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Miscellaneous
+.DS_Store
+.idea
+.vscode
+*.sublime-project
+*.sublime-workspace
