@@ -13,66 +13,19 @@ export class ReverseBlockReader {
     private readonly fileHandle: fs.FileHandle,
     private readonly fileSize: number,
     private readonly numEntries?: number,
+    private readonly search?: string,
     private readonly blockSize: number = 1024 * 1024,
-    private readonly maxInMemoryLeftover = 10 * 1024 * 1024,
-    private readonly search?: string
+    private readonly maxInMemoryLeftover = 10 * 1024 * 1024
   ) {
     this.buffer = Buffer.alloc(this.blockSize);
   }
 
-  async *readBlocks(): AsyncGenerator<string> {
-    const stats = await this.fileHandle.stat();
-    this.initialSize = stats.size;
-    this.initialMtimeMs = stats.mtimeMs;
-    let position = this.fileSize;
-    this.entriesRemaining =
-      this.numEntries === undefined ? Infinity : this.numEntries;
-    this.leftover = Buffer.alloc(0);
-
-    while (position > 0 && this.entriesRemaining > 0) {
-      await this.checkFileIntegrity();
-      const readSize = Math.min(this.blockSize, position);
-      position -= readSize;
-      await this.fileHandle.read(this.buffer, 0, readSize, position);
-
-      // Look for a newline in the current block
-      const newlinePos = this.buffer.subarray(0, readSize).indexOf(0x0a);
-      if (newlinePos === -1) {
-        // No newline found; accumulate leftover bytes
-        this.leftover = Buffer.concat([
-          this.buffer.subarray(0, readSize),
-          this.leftover,
-        ]);
-
-        if (this.leftover.length > this.maxInMemoryLeftover) {
-          // If the leftover becomes too big, process it by scanning backwards for a newline.
-          yield* this.handleLargeLeftover(position);
-          if (this.overridePosition !== undefined) {
-            position = this.overridePosition;
-            this.overridePosition = undefined;
-          }
-        }
-      } else {
-        // Process block when a newline is found.
-        yield* this.processBlockWithNewline(readSize, newlinePos);
-      }
-    }
-
-    // Yield any final leftover if present
-    if (
-      this.leftover.length &&
-      this.entriesRemaining > 0 &&
-      (!this.search || this.leftover.includes(this.search))
-    ) {
-      const finalText = this.leftover.toString('utf8');
-      this.validateText(finalText);
-      yield finalText + '\n';
-    }
+  private consumeOverridePosition(): number | undefined {
+    const pos = this.overridePosition;
+    this.overridePosition = undefined;
+    return pos;
   }
 
-  /**
-   * Validates if the buffer contains only printable ASCII/UTF-8 characters.
-   */
   private validateText(text: string): void {
     if (text.includes('\ufffd')) {
       throw new Error('Unsupported or binary data detected.');
@@ -116,33 +69,86 @@ export class ReverseBlockReader {
    * Then, optionally search the full line (if this.search is provided) and yield it in chunks.
    * Finally, update the read position (via overridePosition) so the main loop can continue correctly.
    */
+  private async findNewlinePositionBackward(startPos: number): Promise<number> {
+    let position = startPos;
+
+    while (position > 0) {
+      const readSize = Math.min(this.blockSize, position);
+      position -= readSize;
+
+      await this.fileHandle.read(this.buffer, 0, readSize, position);
+      const newlinePos = this.buffer.indexOf(0x0a);
+
+      if (newlinePos !== -1) {
+        return position + newlinePos + 1;
+      }
+    }
+
+    return 0;
+  }
+
+  async *readBlocks(): AsyncGenerator<string> {
+    const stats = await this.fileHandle.stat();
+    let position = this.fileSize;
+    this.initialSize = stats.size;
+    this.initialMtimeMs = stats.mtimeMs;
+    this.entriesRemaining =
+      this.numEntries === undefined ? Infinity : this.numEntries;
+    this.leftover = Buffer.alloc(0);
+
+    while (position > 0 && this.entriesRemaining > 0) {
+      await this.checkFileIntegrity();
+      const readSize = Math.min(this.blockSize, position);
+      position -= readSize;
+      await this.fileHandle.read(this.buffer, 0, readSize, position);
+
+      // Look for a newline in the current block
+      const newlinePos = this.buffer.subarray(0, readSize).indexOf(0x0a);
+      if (newlinePos === -1) {
+        // No newline found; accumulate leftover bytes
+        this.leftover = Buffer.concat([
+          this.buffer.subarray(0, readSize),
+          this.leftover,
+        ]);
+
+        if (this.leftover.length > this.maxInMemoryLeftover) {
+          // If the leftover becomes too big, process it by scanning backwards for a newline.
+          yield* this.handleLargeLeftover(position);
+          const overriddenPosition = this.consumeOverridePosition();
+          if (overriddenPosition !== undefined) {
+            position = overriddenPosition;
+          }
+        }
+      } else {
+        // Process block when a newline is found.
+        yield* this.processBlockWithNewline(readSize, newlinePos);
+      }
+    }
+
+    // Yield any final leftover if present
+    if (
+      this.leftover.length &&
+      this.entriesRemaining > 0 &&
+      (!this.search || this.leftover.includes(this.search))
+    ) {
+      const finalText = this.leftover.toString('utf8');
+      this.validateText(finalText);
+      yield finalText + '\n';
+    }
+  }
+
   private async *handleLargeLeftover(
     currentPosition: number
   ): AsyncGenerator<string> {
     const endPos = currentPosition + this.leftover.length;
     this.leftover = Buffer.alloc(0);
-    let startPos = currentPosition;
-
-    // Scan backwards for a newline
-    while (startPos > 0) {
-      const readSize = Math.min(this.blockSize, startPos);
-      startPos -= readSize;
-      await this.fileHandle.read(this.buffer, 0, readSize, startPos);
-      const newlinePos = this.buffer.indexOf(0x0a);
-      if (newlinePos !== -1) {
-        startPos += newlinePos + 1;
-        break;
-      }
-    }
-    startPos = Math.max(0, startPos);
+    const startPos = await this.findNewlinePositionBackward(currentPosition);
     let shouldYield = true;
     if (this.search) {
       shouldYield = await this.streamingSearch(startPos, endPos);
     }
-    // Update the read position for the next iteration.
     this.overridePosition = startPos - 1;
 
-    // If the search (if any) matched, yield the complete line in chunks.
     if (shouldYield) {
       let pos = startPos;
       while (endPos > pos) {
@@ -215,8 +221,6 @@ export async function* generateLines(
       fileHandle,
       size,
       numEntries,
-      1024 * 1024,
-      10 * 1024 * 1024,
       search
     );
     for await (const block of blockReader.readBlocks()) {

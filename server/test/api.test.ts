@@ -180,4 +180,10 @@ describe('GET /file', () => {
       .query({ filepath: testFilepath });
     expect(response.status).toBe(500);
   });
+  it('should reject null bytes in filepath', async () => {
+    const response = await request(app)
+      .get('/file')
+      .query({ filepath: 'file\u0000.log' });
+    expect(response.status).toBe(400);
+  });
 });

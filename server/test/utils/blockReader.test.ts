@@ -312,4 +312,65 @@ describe('ReverseBlockReader with real files', () => {
     // Should only include original content, ignoring 'line3'
     expect(result.join('')).toBe('line1\nline2\n');
   });
+  it('should throw an error on corrupted multi-byte sequences', async () => {
+    const testPath = path.join(__dirname, 'corrupted_multibyte.txt');
+    // This buffer simulates a partially invalid 3-byte UTF-8 sequence
+    // e.g. 0xE2 0x82 is part of a valid "€" sequence but we cut it off
+    const invalidBuffer = Buffer.from([0xe2, 0x82, 0x6c, 0x69, 0x6e, 0x65]);
+    // The last two bytes "line" are just ASCII letters to see if
+    // the partial sequence is truly invalid
+
+    await fs.writeFile(testPath, invalidBuffer);
+
+    const fileHandle = await fs.open(testPath, 'r');
+    const { size } = await fileHandle.stat();
+    const reader = new ReverseBlockReader(fileHandle, size, 4);
+
+    const blocks: string[] = [];
+    await expect(
+      (async () => {
+        for await (const block of reader.readBlocks()) {
+          blocks.push(block);
+        }
+      })()
+    ).rejects.toThrow();
+
+    await fileHandle.close();
+    await fs.unlink(testPath);
+  });
+  it('should handle multiple huge lines exceeding leftover limit', async () => {
+    const testPath = path.join(__dirname, 'huge_lines.txt');
+
+    // Two lines, each 12 MB, parted by a newline.
+    const lineA = 'A'.repeat(12 * 1024 * 1024);
+    const lineB = 'B'.repeat(12 * 1024 * 1024);
+    await fs.writeFile(testPath, `${lineA}\n${lineB}\n`, 'utf8');
+
+    const fileHandle = await fs.open(testPath, 'r');
+    const { size } = await fileHandle.stat();
+
+    // blockSize = 1 MB, leftover limit = 10 MB
+    const reader = new ReverseBlockReader(
+      fileHandle,
+      size,
+      undefined,
+      1024 * 1024,
+      10 * 1024 * 1024
+    );
+
+    const blocks: string[] = [];
+    for await (const block of reader.readBlocks()) {
+      blocks.push(block);
+    }
+
+    await fileHandle.close();
+    await fs.unlink(testPath);
+
+    // We expect both lines to appear. The code will
+    // handle flushes of leftover data for each line
+    // because each line is bigger than leftover limit (10MB).
+    const output = blocks.join('');
+    expect(output).toContain(`${lineB}\n`);
+    expect(output).toContain(`${lineA}\n`);
+  });
 });
