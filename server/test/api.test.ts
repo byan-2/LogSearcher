@@ -143,12 +143,6 @@ describe('GET / Directory Traversal Cases', () => {
       .query({ filepath: 'empty file.txt' });
     expect(response.status).toBe(200);
   });
-  it('should succeed with a Unicode filePath "测试.txt"', async () => {
-    const response = await request(app)
-      .get('/file')
-      .query({ filepath: '测试.txt' });
-    expect(response.status).toBe(200);
-  });
   it('should return an error for a path that resolves to the base directory itself', async () => {
     const response = await request(app)
       .get('/file')

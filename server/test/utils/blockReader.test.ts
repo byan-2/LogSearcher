@@ -1,36 +1,44 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { ReverseBlockReader, generateLines } from '../../src/utils/blockReader';
+import { ReverseBlockReader } from '../../src/utils/blockReader';
 
 describe('ReverseBlockReader with real files', () => {
-  const testFilePath = path.join(__dirname, 'temp_test_file.txt');
-
+  const filePaths = {
+    regular: path.join(__dirname, 'temp_test_file.txt'),
+    singleLine: path.join(__dirname, 'temp_test_file_single_line.txt'),
+    empty: path.join(__dirname, 'temp_test_file_empty.txt'),
+  };
   beforeAll(async () => {
     // File content is in reverse order so that generateLines will output lines in natural order.
     // Using content that forces block splits when using a small blockSize.
     // The file content is: "line4\nline3\nline2\nline1\n"
-    await fs.writeFile(testFilePath, 'line4\nline3\nline2\nline1\n', 'utf8');
     await fs.writeFile(
-      path.join(__dirname, 'temp_test_file_single_line.txt'),
+      filePaths.regular,
+      'line4\nline3\nline2\nline1\n',
+      'utf8'
+    );
+    await fs.writeFile(
+      filePaths.singleLine,
       'line1line2line3line4line5',
       'utf8'
     );
-    await fs.writeFile(
-      path.join(__dirname, 'temp_test_file_empty.txt'),
-      '',
-      'utf8'
-    );
+    await fs.writeFile(filePaths.empty, '', 'utf8');
   });
 
   afterAll(async () => {
-    await fs.unlink(testFilePath);
+    //loop over object, unlink each file
+    for (const filePath of Object.values(filePaths)) {
+      await fs.unlink(filePath);
+    }
   });
 
   it('should read blocks correctly', async () => {
-    const fileHandle = await fs.open(testFilePath, 'r');
-    const { size } = await fileHandle.stat();
+    const fileHandle = await fs.open(filePaths.regular, 'r');
     const blockSize = 12;
-    const reader = new ReverseBlockReader(fileHandle, size, blockSize);
+    const reader = new ReverseBlockReader(fileHandle, undefined, undefined, {
+      blockSize,
+      memBuffer: 1024,
+    });
     const blocks: string[] = [];
     for await (const block of reader.readBlocks()) {
       blocks.push(block);
@@ -41,9 +49,11 @@ describe('ReverseBlockReader with real files', () => {
 
   //test queries with blocks of different sizes
   it('should read blocks correctly with different block sizes', async () => {
-    const fileHandle = await fs.open(testFilePath, 'r');
-    const { size } = await fileHandle.stat();
-    const reader = new ReverseBlockReader(fileHandle, size, 3);
+    const fileHandle = await fs.open(filePaths.regular, 'r');
+    const reader = new ReverseBlockReader(fileHandle, 3, undefined, {
+      blockSize: 3,
+      memBuffer: 1024,
+    });
     const blocks: string[] = [];
     for await (const block of reader.readBlocks()) {
       blocks.push(block);
@@ -53,12 +63,11 @@ describe('ReverseBlockReader with real files', () => {
   });
 
   it('should read blocks correctly with single line file', async () => {
-    const fileHandle = await fs.open(
-      path.join(__dirname, 'temp_test_file_single_line.txt'),
-      'r'
-    );
-    const { size } = await fileHandle.stat();
-    const reader = new ReverseBlockReader(fileHandle, size, 12);
+    const fileHandle = await fs.open(filePaths.singleLine, 'r');
+    const reader = new ReverseBlockReader(fileHandle, undefined, undefined, {
+      blockSize: 12,
+      memBuffer: 1024,
+    });
     const blocks: string[] = [];
     for await (const block of reader.readBlocks()) {
       blocks.push(block);
@@ -68,12 +77,11 @@ describe('ReverseBlockReader with real files', () => {
   });
 
   it('should read blocks correctly with empty file', async () => {
-    const fileHandle = await fs.open(
-      path.join(__dirname, 'temp_test_file_empty.txt'),
-      'r'
-    );
-    const { size } = await fileHandle.stat();
-    const reader = new ReverseBlockReader(fileHandle, size, 12);
+    const fileHandle = await fs.open(filePaths.empty, 'r');
+    const reader = new ReverseBlockReader(fileHandle, undefined, undefined, {
+      blockSize: 12,
+      memBuffer: 1024,
+    });
     const blocks: string[] = [];
     for await (const block of reader.readBlocks()) {
       blocks.push(block);
@@ -88,8 +96,10 @@ describe('ReverseBlockReader with real files', () => {
     await fs.writeFile(testPath, 'café\nmünchen\n', 'utf8');
 
     const fileHandle = await fs.open(testPath, 'r');
-    const { size } = await fileHandle.stat();
-    const reader = new ReverseBlockReader(fileHandle, size, 3); // Force splits
+    const reader = new ReverseBlockReader(fileHandle, undefined, undefined, {
+      blockSize: 3,
+      memBuffer: 1024,
+    }); // Force splits
     const blocks: string[] = [];
 
     for await (const block of reader.readBlocks()) {
@@ -108,8 +118,10 @@ describe('ReverseBlockReader with real files', () => {
     await fs.writeFile(testPath, 'müncaféchen\n', 'utf8');
 
     const fileHandle = await fs.open(testPath, 'r');
-    const { size } = await fileHandle.stat();
-    const reader = new ReverseBlockReader(fileHandle, size, 12);
+    const reader = new ReverseBlockReader(fileHandle, undefined, undefined, {
+      blockSize: 12,
+      memBuffer: 1024,
+    });
     const blocks: string[] = [];
 
     for await (const block of reader.readBlocks()) {
@@ -127,8 +139,10 @@ describe('ReverseBlockReader with real files', () => {
     await fs.writeFile(testPath, 'münchencafé\n', 'utf8');
 
     const fileHandle = await fs.open(testPath, 'r');
-    const { size } = await fileHandle.stat();
-    const reader = new ReverseBlockReader(fileHandle, size, 12);
+    const reader = new ReverseBlockReader(fileHandle, undefined, undefined, {
+      blockSize: 12,
+      memBuffer: 1024,
+    });
     const blocks: string[] = [];
 
     for await (const block of reader.readBlocks()) {
@@ -146,8 +160,10 @@ describe('ReverseBlockReader with real files', () => {
     await fs.writeFile(testPath, 'caféchen\n', 'utf8');
 
     const fileHandle = await fs.open(testPath, 'r');
-    const { size } = await fileHandle.stat();
-    const reader = new ReverseBlockReader(fileHandle, size, 12);
+    const reader = new ReverseBlockReader(fileHandle, undefined, undefined, {
+      blockSize: 12,
+      memBuffer: 1024,
+    });
     const blocks: string[] = [];
 
     for await (const block of reader.readBlocks()) {
@@ -164,8 +180,10 @@ describe('ReverseBlockReader with real files', () => {
     await fs.writeFile(testPath, 'line3\nline2\nline1', 'utf8'); // No final \n
 
     const fileHandle = await fs.open(testPath, 'r');
-    const { size } = await fileHandle.stat();
-    const reader = new ReverseBlockReader(fileHandle, size, 4);
+    const reader = new ReverseBlockReader(fileHandle, undefined, undefined, {
+      blockSize: 12,
+      memBuffer: 1024,
+    });
     const blocks: string[] = [];
 
     for await (const block of reader.readBlocks()) {
@@ -181,8 +199,10 @@ describe('ReverseBlockReader with real files', () => {
     await fs.writeFile(testPath, 'line3\r\nline2\nline1\r\n', 'utf8');
 
     const fileHandle = await fs.open(testPath, 'r');
-    const { size } = await fileHandle.stat();
-    const reader = new ReverseBlockReader(fileHandle, size, 5);
+    const reader = new ReverseBlockReader(fileHandle, undefined, undefined, {
+      blockSize: 5,
+      memBuffer: 7,
+    });
     const blocks: string[] = [];
 
     for await (const block of reader.readBlocks()) {
@@ -198,8 +218,10 @@ describe('ReverseBlockReader with real files', () => {
     await fs.writeFile(testPath, '\n\nline3\n\nline2\n\n\nline1\n\n', 'utf8');
 
     const fileHandle = await fs.open(testPath, 'r');
-    const { size } = await fileHandle.stat();
-    const reader = new ReverseBlockReader(fileHandle, size, 4);
+    const reader = new ReverseBlockReader(fileHandle, undefined, undefined, {
+      blockSize: 5,
+      memBuffer: 10,
+    });
     const blocks: string[] = [];
 
     for await (const block of reader.readBlocks()) {
@@ -217,13 +239,7 @@ describe('ReverseBlockReader with real files', () => {
     await fs.writeFile(testPath, `${longLine}\nshort\n`, 'utf8');
 
     const fileHandle = await fs.open(testPath, 'r');
-    const { size } = await fileHandle.stat();
-    const reader = new ReverseBlockReader(
-      fileHandle,
-      size,
-      1024 * 1024, // 1MB blocks
-      10 * 1024 * 1024 // 10MB memory limit
-    );
+    const reader = new ReverseBlockReader(fileHandle);
 
     const blocks: string[] = [];
     for await (const block of reader.readBlocks()) {
@@ -240,11 +256,11 @@ describe('ReverseBlockReader with real files', () => {
   it('should handle binary files with null bytes', async () => {
     const testPath = path.join(__dirname, 'binary_file.bin');
     const buffer = Buffer.alloc(1024);
-    buffer.writeUInt32BE(0xdeadbeef, 0);
+    buffer.writeUInt32BE(0x0123abcd, 0);
     await fs.writeFile(testPath, buffer);
 
     const fileHandle = await fs.open(testPath, 'r');
-    const reader = new ReverseBlockReader(fileHandle, buffer.length, 128);
+    const reader = new ReverseBlockReader(fileHandle, 128);
     //expect reader to throw an error
 
     await fileHandle.close();
@@ -259,7 +275,7 @@ describe('ReverseBlockReader with real files', () => {
     await fs.writeFile(testPath, buffer);
 
     const fileHandle = await fs.open(testPath, 'r');
-    const reader = new ReverseBlockReader(fileHandle, buffer.length, 128);
+    const reader = new ReverseBlockReader(fileHandle, 128);
     //expect reader to throw an error
 
     await fileHandle.close();
@@ -267,28 +283,17 @@ describe('ReverseBlockReader with real files', () => {
     expect(reader.readBlocks().next()).rejects.toThrow();
   });
 
-  it('should handle closed file handles gracefully', async () => {
-    const fileHandle = await fs.open(testFilePath, 'r');
-    const reader = new ReverseBlockReader(
-      fileHandle,
-      (await fileHandle.stat()).size,
-      12
-    );
-  });
   it('should handle file growth during reading', async () => {
     const testPath = path.join(__dirname, 'growing_file.txt');
     // Initial content: 'line2\nline1\n' (12 bytes)
     await fs.writeFile(testPath, 'line2\nline1\n', 'utf8');
 
     const fileHandle = await fs.open(testPath, 'r');
-    const { size } = await fileHandle.stat();
     // Set blockSize to 6 bytes to split reading into two blocks
-    const reader = new ReverseBlockReader(
-      fileHandle,
-      size,
-      5, // numEntries
-      6 // blockSize (smaller than file size)
-    );
+    const reader = new ReverseBlockReader(fileHandle, undefined, undefined, {
+      blockSize: 6,
+      memBuffer: 7,
+    });
 
     // Simulate concurrent writer after the first block is processed
     const writer = fs.open(testPath, 'a');
@@ -323,8 +328,7 @@ describe('ReverseBlockReader with real files', () => {
     await fs.writeFile(testPath, invalidBuffer);
 
     const fileHandle = await fs.open(testPath, 'r');
-    const { size } = await fileHandle.stat();
-    const reader = new ReverseBlockReader(fileHandle, size, 4);
+    const reader = new ReverseBlockReader(fileHandle, 4);
 
     const blocks: string[] = [];
     await expect(
@@ -347,16 +351,8 @@ describe('ReverseBlockReader with real files', () => {
     await fs.writeFile(testPath, `${lineA}\n${lineB}\n`, 'utf8');
 
     const fileHandle = await fs.open(testPath, 'r');
-    const { size } = await fileHandle.stat();
 
-    // blockSize = 1 MB, leftover limit = 10 MB
-    const reader = new ReverseBlockReader(
-      fileHandle,
-      size,
-      undefined,
-      1024 * 1024,
-      10 * 1024 * 1024
-    );
+    const reader = new ReverseBlockReader(fileHandle, undefined, undefined);
 
     const blocks: string[] = [];
     for await (const block of reader.readBlocks()) {
@@ -372,5 +368,25 @@ describe('ReverseBlockReader with real files', () => {
     const output = blocks.join('');
     expect(output).toContain(`${lineB}\n`);
     expect(output).toContain(`${lineA}\n`);
+  });
+  it('should handle multi-byte UTF-8 characters', async () => {
+    const testPath = path.join(__dirname, 'utf8_test.txt');
+    // "café" (4 letters, 5 bytes)
+    await fs.writeFile(testPath, 'café\nmünchen\n', 'utf8');
+
+    const fileHandle = await fs.open(testPath, 'r');
+    const reader = new ReverseBlockReader(fileHandle, undefined, undefined, {
+      blockSize: 12,
+      memBuffer: 1024,
+    });
+    const blocks: string[] = [];
+
+    for await (const block of reader.readBlocks()) {
+      blocks.push(block);
+    }
+
+    await fileHandle.close();
+    await fs.unlink(testPath);
+    expect(blocks.join('')).toBe('münchen\ncafé\n');
   });
 });

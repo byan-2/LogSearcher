@@ -24,6 +24,9 @@ export class FilenameValidator implements Validator<string | undefined> {
     if (!filepath) {
       throw new ValidationError('Filepath is required');
     }
+    if (!/^[\x00-\x7F]*$/.test(filepath)) {
+      throw new ValidationError('Invalid filename');
+    }
   }
 }
 
@@ -51,6 +54,9 @@ export class SearchValidator implements Validator<string | undefined> {
         throw new ValidationError(
           `Invalid search query, length must be between 1 and ${this.maxSearchLength} characters`
         );
+      }
+      if (!/^[^\p{C}]+$/u.test(search)) {
+        throw new ValidationError('Invalid characters in search query');
       }
     }
   }
@@ -94,5 +100,26 @@ export async function getSecureFilePath(userInput: string): Promise<string> {
     return resolvedPath;
   } catch (err) {
     throw new ValidationError('File not found');
+  }
+}
+
+export class UTF8Validator {
+  private decoder = new TextDecoder('utf-8', { fatal: true });
+  // Validate chunks using TextDecoder with streaming enabled
+  validateUtf8Chunk(chunk: Buffer, stream = false): Buffer {
+    try {
+      this.decoder.decode(chunk, { stream });
+      return chunk;
+    } catch (e) {
+      throw new ValidationError('Invalid UTF-8 sequence detected');
+    }
+  }
+
+  finalizeValidation(): void {
+    try {
+      this.decoder.decode(); // flush remaining data
+    } catch (e) {
+      throw new ValidationError('Incomplete UTF-8 data at end of stream');
+    }
   }
 }
