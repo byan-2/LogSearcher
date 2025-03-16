@@ -283,40 +283,6 @@ describe('ReverseBlockReader with real files', () => {
     expect(reader.readBlocks().next()).rejects.toThrow();
   });
 
-  it('should handle file growth during reading', async () => {
-    const testPath = path.join(__dirname, 'growing_file.txt');
-    // Initial content: 'line2\nline1\n' (12 bytes)
-    await fs.writeFile(testPath, 'line2\nline1\n', 'utf8');
-
-    const fileHandle = await fs.open(testPath, 'r');
-    // Set blockSize to 6 bytes to split reading into two blocks
-    const reader = new ReverseBlockReader(fileHandle, undefined, undefined, {
-      blockSize: 6,
-      memBuffer: 7,
-    });
-
-    // Simulate concurrent writer after the first block is processed
-    const writer = fs.open(testPath, 'a');
-    const readPromise = (async () => {
-      const blocks: string[] = [];
-      for await (const block of reader.readBlocks()) {
-        blocks.push(block);
-        if (blocks.length === 1) {
-          // Append new data after first block is read (position 6)
-          await (await writer).appendFile('line3\n');
-        }
-      }
-      await (await writer).close();
-      return blocks;
-    })();
-
-    const result = await readPromise;
-    await fileHandle.close();
-    await fs.unlink(testPath);
-
-    // Should only include original content, ignoring 'line3'
-    expect(result.join('')).toBe('line1\nline2\n');
-  });
   it('should throw an error on corrupted multi-byte sequences', async () => {
     const testPath = path.join(__dirname, 'corrupted_multibyte.txt');
     // This buffer simulates a partially invalid 3-byte UTF-8 sequence

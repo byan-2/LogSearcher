@@ -20,21 +20,25 @@ export interface FileQuery {
 }
 
 export class FilenameValidator implements Validator<string | undefined> {
+  constructor(private maxDirLength: number = 4096) {}
   validate(filepath: string | undefined): void {
     if (!filepath) {
-      throw new ValidationError('Filepath is required');
+      throw new ValidationError('File path is required');
     }
-    if (!/^[\x00-\x7F]*$/.test(filepath)) {
-      throw new ValidationError('Invalid filename');
+    if (filepath.length === 0 || filepath.length > this.maxDirLength) {
+      throw new ValidationError(
+        `Invalid filename, length must be under ${this.maxDirLength} characters`
+      );
     }
   }
 }
 
 export class EntriesValidator implements Validator<string | undefined> {
+  constructor(private maxEntries: number = Number.MAX_SAFE_INTEGER) {}
   validate(entries: string | undefined): void {
     if (entries !== undefined) {
       const parsed = parseInt(entries, 10);
-      if (isNaN(parsed) || parsed < 0 || parsed > Number.MAX_SAFE_INTEGER) {
+      if (isNaN(parsed) || parsed < 0 || parsed > this.maxEntries) {
         throw new ValidationError(
           'Entries must be a valid non-negative integer.'
         );
@@ -44,10 +48,7 @@ export class EntriesValidator implements Validator<string | undefined> {
 }
 
 export class SearchValidator implements Validator<string | undefined> {
-  private maxSearchLength: number;
-  constructor(maxSearchLength: number = 10000) {
-    this.maxSearchLength = maxSearchLength;
-  }
+  constructor(private maxSearchLength: number = 10000) {}
   validate(search: string | undefined): void {
     if (search !== undefined) {
       if (search.length === 0 || search.length > this.maxSearchLength) {
@@ -89,7 +90,7 @@ export class FileQueryValidator implements Validator<FileQuery> {
 export async function getSecureFilePath(userInput: string): Promise<string> {
   const resolvedPath = path.join(config.baseDir, userInput.trim());
   const relative = path.relative(config.baseDir, resolvedPath);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+  if (relative.startsWith('..')) {
     throw new ValidationError('Invalid file path');
   }
   try {
@@ -100,26 +101,5 @@ export async function getSecureFilePath(userInput: string): Promise<string> {
     return resolvedPath;
   } catch (err) {
     throw new ValidationError('File not found');
-  }
-}
-
-export class UTF8Validator {
-  private decoder = new TextDecoder('utf-8', { fatal: true });
-  // Validate chunks using TextDecoder with streaming enabled
-  validateUtf8Chunk(chunk: Buffer, stream = false): Buffer {
-    try {
-      this.decoder.decode(chunk, { stream });
-      return chunk;
-    } catch (e) {
-      throw new ValidationError('Invalid UTF-8 sequence detected');
-    }
-  }
-
-  finalizeValidation(): void {
-    try {
-      this.decoder.decode(); // flush remaining data
-    } catch (e) {
-      throw new ValidationError('Incomplete UTF-8 data at end of stream');
-    }
   }
 }
