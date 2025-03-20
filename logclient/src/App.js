@@ -97,9 +97,7 @@ function App() {
         </div>
       )}
       {error && <div className="error">{error}</div>}
-      <div className="log-container">
-        <pre>{log}</pre>
-      </div>
+      <div className="log-container">{log}</div>
     </div>
   );
 }

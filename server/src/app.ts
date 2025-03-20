@@ -12,7 +12,6 @@ const app = express();
 app.use(express.json({ limit: '100kb' }));
 app.use(corsMiddleware);
 
-// express endpoint using Readable.from() to create a stream from the async generator
 app.get(
   '/file',
   validateFileQuery,
@@ -23,7 +22,8 @@ app.get(
   ) => {
     try {
       const { filepath, entries, search } = req.query;
-      const numEntries = entries ? parseInt(entries, 10) : undefined;
+      const numEntries =
+        entries !== undefined ? parseInt(entries, 10) : Infinity;
       const secureFilePath = await getSecureFilePath(filepath as string);
       const linesIterator = generateLines(secureFilePath, numEntries, search);
       const linesStream = Readable.from(linesIterator);

@@ -56,7 +56,13 @@ export class SearchValidator implements Validator<string | undefined> {
           `Invalid search query, length must be between 1 and ${this.maxSearchLength} characters`
         );
       }
-      if (!/^[^\p{C}]+$/u.test(search)) {
+
+      // disallow invisible control characters, formatting codes, directional control characters, and zero width space
+      if (
+        !/^[^\p{C}\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]+$/u.test(
+          search
+        )
+      ) {
         throw new ValidationError('Invalid characters in search query');
       }
     }

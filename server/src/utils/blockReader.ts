@@ -41,7 +41,7 @@ export class ReverseBlockReader {
 
   constructor(
     private readonly fileHandle: fs.FileHandle,
-    private readonly numEntries?: number,
+    private readonly numEntries: number,
     private readonly search?: string,
     private options: BlockReaderOptions = {
       blockSize: 1024 * 1024,
@@ -61,8 +61,7 @@ export class ReverseBlockReader {
       this.fileBuffer = Buffer.alloc(
         Math.min(this.options.blockSize, stats.size)
       );
-      this.entriesRemaining =
-        this.numEntries === undefined ? Infinity : this.numEntries;
+      this.entriesRemaining = this.numEntries;
     } catch (err) {
       throw new Error('Error resetting file state');
     }
@@ -101,7 +100,7 @@ export class ReverseBlockReader {
         ]);
         // if the leftover becomes too big, process it by scanning backwards for a newline.
         if (this.leftover.length > this.options.memBuffer) {
-          yield* this.handleLargeLeftover(this.curPosition);
+          yield* this.processLargeLeftover(this.curPosition);
         }
       } else {
         yield* this.processBlock(readSize, newlinePos);
@@ -109,12 +108,11 @@ export class ReverseBlockReader {
     }
 
     // yield any final leftover if present
-    if (
-      this.leftover.length &&
-      this.entriesRemaining > 0 &&
-      (this.search === undefined || this.leftover.includes(this.search))
-    ) {
-      yield this.streamDecoder.getUtf8Chunk(this.leftover) + '\n';
+    if (this.leftover.length && this.entriesRemaining > 0) {
+      const leftoverStr = this.streamDecoder.getUtf8Chunk(this.leftover);
+      if (this.searchMatch(leftoverStr)) {
+        yield leftoverStr + '\n';
+      }
     }
   }
 
@@ -132,9 +130,7 @@ export class ReverseBlockReader {
     // save the part before the newline as the new leftover.
     this.leftover = Buffer.from(this.fileBuffer.subarray(0, newlinePos));
     const decoded = lines.split('\n').reverse();
-    let processedBlock = this.search
-      ? decoded.filter((line) => line.includes(this.search!))
-      : decoded.filter((line) => line.trim().length);
+    let processedBlock = decoded.filter((line) => this.searchMatch(line));
     if (this.entriesRemaining < processedBlock.length) {
       processedBlock = processedBlock.slice(0, this.entriesRemaining);
     }
@@ -152,7 +148,9 @@ export class ReverseBlockReader {
       const readSize = Math.min(this.options.blockSize, position);
       position -= readSize;
       await this.fileHandle.read(this.fileBuffer, 0, readSize, position);
-      const newlinePos = this.fileBuffer.indexOf(ReverseBlockReader.NEW_LINE);
+      const newlinePos = this.fileBuffer.lastIndexOf(
+        ReverseBlockReader.NEW_LINE
+      );
       if (newlinePos !== -1) {
         return position + newlinePos + 1;
       }
@@ -160,7 +158,7 @@ export class ReverseBlockReader {
     return 0;
   }
 
-  private async *handleLargeLeftover(
+  private async *processLargeLeftover(
     currentPosition: number
   ): AsyncGenerator<string> {
     const endPos = currentPosition + this.leftover.length;
@@ -183,14 +181,19 @@ export class ReverseBlockReader {
     this.curPosition = Math.max(startPos - 1, 0);
   }
 
+  private searchMatch(chunkStr: string): boolean {
+    if (this.search === undefined) {
+      return chunkStr.trim().length > 0;
+    } else {
+      return chunkStr.includes(this.search);
+    }
+  }
+
   // performs a streaming search for the search term between startPos and endPos.
   private async streamingSearch(
     startPos: number,
     endPos: number
   ): Promise<boolean> {
-    if (this.search === undefined) {
-      return true;
-    }
     let searchBuffer = Buffer.alloc(0);
     let currentPos = startPos;
 
@@ -199,14 +202,15 @@ export class ReverseBlockReader {
       const chunk = Buffer.alloc(readSize);
       await this.readIntoBuffer(readSize, currentPos, chunk);
       const combined = Buffer.concat([searchBuffer, chunk]).toString('utf8');
-      if (combined.includes(this.search)) {
+      if (this.searchMatch(combined)) {
         return true;
       }
-
-      // keep the last (bytelength - 1) bytes for overlap
-      searchBuffer = Buffer.from(
-        chunk.subarray(-Math.max(0, Buffer.byteLength(this.search) - 1))
-      );
+      if (this.search) {
+        // keep the last (bytelength - 1) bytes for overlap
+        searchBuffer = Buffer.from(
+          chunk.subarray(-Math.max(0, Buffer.byteLength(this.search) - 1))
+        );
+      }
       currentPos += readSize;
     }
     return false;
@@ -215,7 +219,7 @@ export class ReverseBlockReader {
 
 export async function* generateLines(
   filePath: string,
-  numEntries?: number,
+  numEntries: number,
   search?: string
 ): AsyncGenerator<string> {
   let fileHandle: fs.FileHandle | undefined;
@@ -226,7 +230,10 @@ export async function* generateLines(
   }
 
   try {
-    const blockReader = new ReverseBlockReader(fileHandle, numEntries, search);
+    const blockReader = new ReverseBlockReader(fileHandle, numEntries, search, {
+      blockSize: 1024 * 1024,
+      memBuffer: 10 * 1024 * 1024,
+    });
     yield* blockReader.readBlocks(); // let errors here propagate unaltered
   } finally {
     if (fileHandle) {
